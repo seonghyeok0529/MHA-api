@@ -4,6 +4,7 @@ import express, { NextFunction, Request, Response } from "express";
 import { initializeDatabase } from "./db";
 import chatRoutes from "./routes/chatRoutes";
 import sessionRoutes from "./routes/sessionRoutes";
+import mentalHealthReportApi from "./api/mentalhealth/report";
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api", sessionRoutes);
 app.use("/api", chatRoutes);
+app.use("/api", mentalHealthReportApi);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   const message = err instanceof Error ? err.message : "Internal server error";
