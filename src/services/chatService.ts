@@ -1,232 +1,103 @@
 import OpenAI from "openai";
+import { ChatMessage, ChatResponseBody } from "../types/chat";
 
-/* =========================
-   TYPES
-========================= */
-export type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
+const SYSTEM_PROMPT = [
+  "당신은 정신건강 사전 상담 지원 대화 도우미입니다.",
+  "이 시스템의 목적은 상담을 대체하는 것이 아니라, 사용자가 상담 전에 자신의 상태를 더 자연스럽게 표현하도록 돕는 것입니다.",
 
-export type ChatResponseBody = {
-  reply: string;
-  meta: {
-    responseTime: number;
-    length: number;
-    userMessageLength: number;
-    messageCount: number;
-    userType: string;
-    stage: string;
-  };
-};
+  "핵심 역할:",
+  "- 사용자가 '말하도록 만드는 것'이 목표이며, 질문 자체가 목적이 아니다.",
+  "- 질문보다 반응(공감, 정리, 확장)을 우선한다.",
 
-/* =========================
-   OPENAI
-========================= */
+  "대화 규칙:",
+  "1) 한 번에 하나의 흐름만 유지한다.",
+  "2) 반드시 '반응 → (필요할 때만) 질문' 순서를 따른다.",
+  "3) 질문은 전체 응답의 30% 이하로 유지한다.",
+  "4) 같은 의미의 질문을 반복하지 않는다.",
+  "5) 이미 사용자가 말한 내용을 다시 묻지 않는다.",
+  "6) 질문이 막히면 새로운 질문을 만들지 말고, 사용자의 말을 확장한다.",
+  "7) 가능하면 질문 없이도 대화를 이어간다.",
+  "8) 사용자의 표현을 요약하거나 재구성하여 말할 수 있게 돕는다.",
+  "9) 감정 → 상황 → 관계 순으로 자연스럽게 탐색한다.",
+
+  "대화 스타일:",
+  "- 짧고 자연스럽게 (1~3문장)",
+  "- 과한 공감 금지",
+  "- 판단 없이 담담하게",
+  "- 친구처럼 대화하지만 가볍지 않게",
+
+  "절대 하지 말 것:",
+  "- 진단",
+  "- 판단",
+  "- 성향 분석",
+  "- 위험도 평가",
+  "- 해결책 제안",
+  "- 질문만 이어가는 대화",
+
+  "출력 방식:",
+  "- 항상 자연스러운 대화 문장으로만 응답",
+  "- 리스트/설명체 금지",
+  "- 사용자가 계속 말하고 싶어지도록 유도",
+
+  "응답 생성 전, 스스로 다음을 확인한다:",
+  "- 이 응답이 질문 위주인가?",
+  "- 사용자의 말을 충분히 반영했는가?",
+  "- 더 자연스럽게 이어갈 수 있는가?"
+].join("\n");
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-/* =========================
-   BASE SYSTEM PROMPT
-========================= */
-const SYSTEM_PROMPT = `
-너는 상담사가 아니라 사용자가 자연스럽게 자신의 이야기를 꺼내도록 돕는 대화 파트너다.
-
-목표:
-- 사용자가 편하게 말하도록 만드는 것
-- 질문보다 반응(공감, 정리, 확장)을 우선
-
-규칙:
-- 반드시 반응 → 질문 순서
-- 질문 비율 최소화
-- 같은 질문 반복 금지
-- 이미 말한 내용 재질문 금지
-- 질문 없이도 대화 유지 가능해야 함
-
-스타일:
-- 1~3문장
-- 자연스럽고 담백하게
-- 과한 공감 금지
-
-금지:
-- 진단
-- 판단
-- 해결책 제안
-- 성향 분석
-- 질문만 이어가기
-`;
-
-/* =========================
-   UTILS
-========================= */
 function sanitizeMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages
-    .filter((m) => m && typeof m.content === "string")
-    .map((m) => ({
-      role: m.role,
-      content: m.content.trim()
+    .filter((message) => message && typeof message.content === "string")
+    .map((message) => ({
+      role: message.role,
+      content: message.content.trim()
     }))
-    .filter((m) => m.content.length > 0);
+    .filter((message) => message.content.length > 0);
 }
 
-/* =========================
-   USER TYPE DETECTION
-========================= */
-function detectUserType(messages: ChatMessage[]): "low" | "medium" | "high" {
-  const userMessages = messages.filter((m) => m.role === "user");
-
-  if (userMessages.length === 0) return "medium";
-
-  const avgLength =
-    userMessages.reduce((acc, m) => acc + m.content.length, 0) /
-    userMessages.length;
-
-  if (avgLength < 20) return "low";
-  if (avgLength < 60) return "medium";
-  return "high";
-}
-
-/* =========================
-   STAGE DETECTION
-========================= */
-function detectStage(messages: ChatMessage[]): "rapport" | "explore" | "deep" {
-  const userCount = messages.filter((m) => m.role === "user").length;
-
-  if (userCount < 3) return "rapport";
-  if (userCount < 8) return "explore";
-  return "deep";
-}
-
-/* =========================
-   DYNAMIC PROMPT
-========================= */
-function buildDynamicPrompt(userType: string) {
-  if (userType === "low") {
-    return `
-사용자가 말을 적게 하는 상태다.
-- 질문을 줄이고 반응 중심
-- 부담 없는 짧은 질문만 허용
-`;
-  }
-
-  if (userType === "high") {
-    return `
-사용자가 충분히 이야기하고 있다.
-- 내용을 정리하고 구조화
-- 필요할 때만 질문
-`;
-  }
-
-  return `
-균형 있는 대화를 유지한다.
-`;
-}
-
-/* =========================
-   STAGE PROMPT
-========================= */
-function getStagePrompt(stage: string) {
-  if (stage === "rapport") {
-    return `
-- 가볍고 편한 대화
-- 깊은 질문 금지
-`;
-  }
-
-  if (stage === "explore") {
-    return `
-- 감정과 상황을 자연스럽게 탐색
-`;
-  }
-
-  return `
-- 핵심 감정과 패턴 정리
-`;
-}
-
-/* =========================
-   SUMMARY
-========================= */
-export async function summarizeConversation(messages: ChatMessage[]) {
-  if (messages.length < 6) return undefined;
-
-  const completion = await openai.responses.create({
-    model: "gpt-4.1-mini",
-    input: [
-      {
-        role: "system",
-        content: "다음 대화를 감정과 상황 중심으로 짧게 요약하세요."
-      },
-      {
-        role: "user",
-        content: messages.map((m) => `${m.role}: ${m.content}`).join("\n")
-      }
-    ]
-  });
-
-  return completion.output_text?.trim();
-}
-
-/* =========================
-   MAIN FUNCTION
-========================= */
-export async function generateSmartReply(
-  messages: ChatMessage[],
-  summary?: string
-): Promise<ChatResponseBody> {
+export async function generateChatReply(messages: ChatMessage[]): Promise<ChatResponseBody> {
   const cleanedMessages = sanitizeMessages(messages);
 
   if (cleanedMessages.length === 0) {
-    throw new Error("No valid messages");
+    throw new Error("At least one valid user message is required.");
   }
-
-  const lastUserMessage =
-    cleanedMessages.filter((m) => m.role === "user").pop()?.content || "";
-
-  const userType = detectUserType(cleanedMessages);
-  const stage = detectStage(cleanedMessages);
-
-  const dynamicPrompt = buildDynamicPrompt(userType);
-  const stagePrompt = getStagePrompt(stage);
 
   const startedAt = Date.now();
 
   const completion = await openai.responses.create({
     model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-    temperature: 0.7,
     input: [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "system", content: dynamicPrompt },
-      { role: "system", content: stagePrompt },
-
-      ...(summary
-        ? [{ role: "system", content: `대화 요약:\n${summary}` }]
-        : []),
-
-      ...cleanedMessages.slice(-6),
-
-      { role: "user", content: lastUserMessage }
-    ]
+      ...cleanedMessages.map((message) => ({
+        role: message.role,
+        content: message.content
+      }))
+    ],
+    temperature: 0.7
   });
 
   const reply = completion.output_text?.trim();
 
   if (!reply) {
-    throw new Error("No response generated");
+    throw new Error("No response was generated by the model.");
   }
 
   const responseTime = Date.now() - startedAt;
+  const userMessageLength = cleanedMessages
+    .filter((message) => message.role === "user")
+    .reduce((acc, message) => acc + message.content.length, 0);
 
   return {
     reply,
     meta: {
       responseTime,
       length: reply.length,
-      userMessageLength: lastUserMessage.length,
-      messageCount: cleanedMessages.length,
-      userType,
-      stage
+      userMessageLength,
+      messageCount: cleanedMessages.length
     }
   };
 }
