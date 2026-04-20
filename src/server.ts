@@ -2,6 +2,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import express, { NextFunction, Request, Response } from "express";
 import chatRoutes from "./routes/chatRoutes";
+import sessionRoutes from "./routes/sessionRoutes";
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ status: "ok" });
 });
 
+app.use("/api", sessionRoutes);
 app.use("/api", chatRoutes);
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
