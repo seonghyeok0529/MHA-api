@@ -1,6 +1,10 @@
 import crypto from "crypto";
 import { Router } from "express";
 import { getMessagesBySessionId } from "../../repositories/messageRepository";
+import {
+  getCachedMentalHealthReport,
+  saveMentalHealthReport
+} from "../../repositories/mentalHealthReportRepository";
 import { getSessionById } from "../../repositories/sessionRepository";
 import { generateMentalHealthReport } from "../../services/reportService";
 import { MentalHealthReportRequestBody } from "../../types/report";
@@ -36,12 +40,39 @@ router.post("/mentalhealth/report", async (req, res, next) => {
       });
     }
 
+    const messageDigest = crypto
+      .createHash("sha256")
+      .update(
+        storedMessages
+          .map((message) => `${message.messageId}:${message.role}:${message.content}`)
+          .join("\n")
+      )
+      .digest("hex");
+
+    const cachedReport = await getCachedMentalHealthReport(sessionId);
+
+    if (
+      cachedReport &&
+      cachedReport.messageDigest === messageDigest &&
+      cachedReport.messageCount === storedMessages.length
+    ) {
+      console.info("[mentalHealthReport] report:cache_hit", {
+        requestId,
+        sessionId,
+        messageCount: storedMessages.length
+      });
+
+      return res.status(200).json(cachedReport.report);
+    }
+
     const report = await generateMentalHealthReport(
       storedMessages.map((message) => ({
         role: message.role,
         content: message.content
       }))
     );
+
+    await saveMentalHealthReport(sessionId, messageDigest, storedMessages.length, report);
 
     console.info("[mentalHealthReport] report:success", {
       requestId,

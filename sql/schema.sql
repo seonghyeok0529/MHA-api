@@ -43,4 +43,17 @@ CREATE TABLE IF NOT EXISTS metrics (
 CREATE INDEX IF NOT EXISTS idx_metrics_session_id_created_at
   ON metrics (session_id, created_at);
 
+CREATE TABLE IF NOT EXISTS mental_health_reports (
+  session_id UUID PRIMARY KEY,
+  message_digest TEXT NOT NULL,
+  message_count INTEGER NOT NULL CHECK (message_count >= 0),
+  report_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT mental_health_reports_session_id_fkey
+    FOREIGN KEY (session_id)
+    REFERENCES sessions (session_id)
+    ON DELETE CASCADE
+);
+
 COMMIT;
