@@ -37,7 +37,8 @@ export const MENTAL_HEALTH_REPORT_PROMPT = [
 ].join("\n");
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.UPSTAGE_API_KEY,
+  baseURL: "https://api.upstage.ai/v1"
 });
 
 const REQUIRED_REPORT_KEYS: Array<keyof MentalHealthReport> = [
@@ -131,9 +132,9 @@ export async function generateMentalHealthReport(
     throw new Error("At least one valid message is required to generate a report.");
   }
 
-  const completion = await openai.responses.create({
-    model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-    input: [
+  const completion = await openai.chat.completions.create({
+    model: "solar-pro3",
+    messages: [
       { role: "system", content: MENTAL_HEALTH_REPORT_PROMPT },
       ...cleanedMessages.map((message) => ({
         role: message.role,
@@ -143,7 +144,7 @@ export async function generateMentalHealthReport(
     temperature: 0.2
   });
 
-  const outputText = completion.output_text;
+  const outputText = completion.choices?.[0]?.message?.content;
   const jsonPayload = extractJson(outputText || "");
 
   let parsed: unknown;
