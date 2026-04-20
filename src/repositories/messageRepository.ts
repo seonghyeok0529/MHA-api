@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { PoolClient } from "pg";
 import { query } from "../db";
 import { SessionMessage } from "../types/session";
 
@@ -23,11 +24,21 @@ function mapMessage(row: MessageRow): SessionMessage {
 export async function addMessage(
   sessionId: string,
   role: "user" | "assistant",
-  content: string
+  content: string,
+  client?: PoolClient
 ): Promise<SessionMessage> {
   const messageId = crypto.randomUUID();
+  const dbQuery = client ? client.query.bind(client) : query;
 
-  const result = await query<MessageRow>(
+  console.info("[messageRepository.addMessage] insert:start", {
+    sessionId,
+    messageId,
+    role,
+    contentLength: content.length,
+    viaTransaction: Boolean(client)
+  });
+
+  const result = await dbQuery<MessageRow>(
     `
       INSERT INTO messages (message_id, session_id, role, content)
       VALUES ($1, $2, $3, $4)
@@ -35,6 +46,18 @@ export async function addMessage(
     `,
     [messageId, sessionId, role, content]
   );
+
+  if (result.rows.length !== 1 || !result.rows[0]) {
+    throw new Error(
+      `[messageRepository.addMessage] Insert failed for sessionId=${sessionId}, role=${role}.`
+    );
+  }
+
+  console.info("[messageRepository.addMessage] insert:success", {
+    sessionId,
+    messageId,
+    role
+  });
 
   return mapMessage(result.rows[0]);
 }
