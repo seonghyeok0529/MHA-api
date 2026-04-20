@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { generateChatReply } from "../services/chatService";
-import { getSessionById, addMessage } from "../store/memoryStore";
+import { addMessage } from "../repositories/messageRepository";
+import { getSessionById } from "../repositories/sessionRepository";
+import { saveMetric } from "../repositories/metricRepository";
 import { ChatRequestBody } from "../types/chat";
 
 const router = Router();
@@ -21,7 +23,7 @@ router.post("/chat", async (req, res, next) => {
       });
     }
 
-    const session = getSessionById(body.sessionId);
+    const session = await getSessionById(body.sessionId);
 
     if (!session) {
       return res.status(404).json({
@@ -45,11 +47,12 @@ router.post("/chat", async (req, res, next) => {
       });
     }
 
-    addMessage(body.sessionId, "user", latestUserMessage.content.trim());
+    await addMessage(body.sessionId, "user", latestUserMessage.content.trim());
 
     const result = await generateChatReply(body.messages);
 
-    addMessage(body.sessionId, "assistant", result.reply);
+    await addMessage(body.sessionId, "assistant", result.reply);
+    await saveMetric(body.sessionId, result.meta);
 
     return res.status(200).json(result);
   } catch (error) {
