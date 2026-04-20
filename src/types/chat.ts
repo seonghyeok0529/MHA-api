@@ -6,6 +6,7 @@ export interface ChatMessage {
 }
 
 export interface ChatRequestBody {
+  sessionId: string;
   messages: ChatMessage[];
 }
 
