@@ -1,6 +1,7 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express, { NextFunction, Request, Response } from "express";
+import { initializeDatabase } from "./db";
 import chatRoutes from "./routes/chatRoutes";
 import sessionRoutes from "./routes/sessionRoutes";
 
@@ -28,6 +29,16 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+async function startServer() {
+  await initializeDatabase();
+
+  app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+  });
+}
+
+startServer().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`Failed to start server: ${message}`);
+  process.exit(1);
 });
