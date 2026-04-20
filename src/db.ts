@@ -1,4 +1,6 @@
 import { Pool, PoolClient, QueryResult } from "pg";
+import { readFile } from "fs/promises";
+import path from "path";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -38,4 +40,17 @@ export async function withTransaction<T>(handler: (client: PoolClient) => Promis
   } finally {
     client.release();
   }
+}
+
+let initialized = false;
+
+export async function initializeDatabase(): Promise<void> {
+  if (initialized) {
+    return;
+  }
+
+  const schemaPath = path.resolve(process.cwd(), "sql", "schema.sql");
+  const schemaSql = await readFile(schemaPath, "utf-8");
+  await pool.query(schemaSql);
+  initialized = true;
 }
