@@ -23,7 +23,22 @@ export const pool = new Pool({
 });
 
 export async function query<T = unknown>(text: string, params: unknown[] = []): Promise<QueryResult<T>> {
-  return pool.query<T>(text, params);
+  if (process.env.DB_DEBUG_LOGS === "true") {
+    console.info("[db.query] start", {
+      text: text.replace(/\s+/g, " ").trim(),
+      paramsCount: params.length
+    });
+  }
+
+  const result = await pool.query<T>(text, params);
+
+  if (process.env.DB_DEBUG_LOGS === "true") {
+    console.info("[db.query] success", {
+      rowCount: result.rows.length
+    });
+  }
+
+  return result;
 }
 
 export async function withTransaction<T>(handler: (client: PoolClient) => Promise<T>): Promise<T> {
